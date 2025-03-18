@@ -9,11 +9,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
+        origin: "",
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+        allowedHeaders: [""], 
     },
 });
 
-app.use(cors());
+app.use(cors({
+    origin: '', 
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], 
+    allowedHeaders: [''], 
+}));
+app.use(express.json());
 app.use(express.json());
 
 const cosmosClient = new CosmosClient({
