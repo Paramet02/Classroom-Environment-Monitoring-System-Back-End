@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const { CosmosClient } = require("@azure/cosmos");
 const cors = require("cors");
 
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -28,7 +29,6 @@ const cosmosClient = new CosmosClient({
 const database = cosmosClient.database(process.env.COSMOS_DATABASE);
 const container = database.container(process.env.COSMOS_CONTAINER);
 
-const PORT = process.env.PORT || 4000;
 
 
 async function checkConnection() {
@@ -76,6 +76,6 @@ io.on("connection", (socket) => {
 
 
 
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+server.listen(4000, () => {
+    console.log(`Server running on port 4000`);
 });
