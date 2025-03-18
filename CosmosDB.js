@@ -20,26 +20,31 @@ async function checkConnection() {
 
 checkConnection(); 
 
-async function saveSensorData(data) {
+// async function saveSensorData(data) {
+//     try {
+//         data.timestamp = new Date().toISOString();
+//         await container.items.create(data);
+//         console.log('Data saved:', data);
+//     } catch (error) {
+//         console.error('Error saving data:', error);
+//     }
+// }
+
+async function fetchLatestData() {
     try {
-        data.timestamp = new Date().toISOString();
-        await container.items.create(data);
-        console.log('Data saved:', data);
+        const querySpec = {
+            query: "SELECT * FROM c ORDER BY c._ts DESC OFFSET 0 LIMIT 10",
+        };
+
+        const { resources } = await container.items.query(querySpec).fetchAll();
+        if (resources.length > 0) {
+            console.log("Latest Data Fetched:", resources);
+            io.emit("newData", resources); // ส่งข้อมูลทั้งหมด 10 อัน
+        }
     } catch (error) {
-        console.error('Error saving data:', error);
+        console.error("Error fetching data:", error);
     }
 }
 
-async function getRecentSensorData() {
-    try {
-        const { resources } = await container.items
-            .query('SELECT * FROM c ORDER BY c.timestamp DESC OFFSET 0 LIMIT 10')
-            .fetchAll();
-        return resources;
-    } catch (error) {
-        console.error('Error fetching data:', error);
-        return [];
-    }
-}
 
-module.exports = { saveSensorData, getRecentSensorData };
+module.exports = { fetchLatestData };
