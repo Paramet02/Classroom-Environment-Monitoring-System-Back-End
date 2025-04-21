@@ -15,7 +15,7 @@ app.use(loginRoute);
 app.use(profileRoute);
 
 
-app.use("/air-quality", airQualityRoute);
+app.use("/air-quality", airQualityController);
 
 
 const PORT = process.env.PORT || 5000;

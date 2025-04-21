@@ -1,37 +1,51 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
-const { poolPromise } = require("./ConnectDB");
-const ML_API_BASE_URL = "http://localhost:8000"; // เปลี่ยนเป็น URL จริงตอนใช้จริงนะ
+const { poolPromise, } = require("./ConnectDB");
 
-// 2.1 คาดการณ์คุณภาพอากาศ
+
+
+
 router.post("/predict-air-quality", async (req, res) => {
   try {
     const pool = await poolPromise;
     const result = await pool.request().query(`
-      SELECT * FROM air_quality_data 
-      WHERE timestamp > DATEADD(MINUTE, -10, GETDATE())
-      ORDER BY timestamp ASC
+      SELECT TOP 1 *
+      FROM SensorData
+      ORDER BY created_at DESC
     `);
 
     const rows = result.recordset;
 
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ status: "error", message: "No recent data" });
+      return res.status(404).json({ status: "error", message: "No sensor data found" });
     }
 
-    const dataForML = rows.map(row => ({
-      pm25: row.pm25,
-      co2: row.co2,
-      humidity: row.humidity,
-      temperature: row.temperature,
-      timestamp: row.timestamp,
-    }));
+    const featuresArray = [
+      rows[0].PM2_5,
+      rows[0].PM10,
+      rows[0].NO2,
+      rows[0].CO,
+      rows[0].SO2,
+      rows[0].O3
+    ];
 
-    const mlResponse = await axios.post(`${ML_API_BASE_URL}/predict`, {
-      data: dataForML,
-      predictMinutes: req.body.predictMinutes || 15,
-    }, { timeout: 5000 });
+    const mlRequestData = {
+      features: featuresArray
+    };
+
+    console.log("Data being sent to ML API:", JSON.stringify(mlRequestData)); 
+
+    const mlResponse = await axios.post(
+      `https://ml-knn-bjdncabjdgbwexh9.southeastasia-01.azurewebsites.net/predict`,
+      mlRequestData, 
+      {
+        timeout: 5000,
+        headers: {
+          'Content-Type': 'application/json' 
+        }
+      }
+    );
 
     res.json({ status: "success", prediction: mlResponse.data });
 
@@ -41,9 +55,10 @@ router.post("/predict-air-quality", async (req, res) => {
   }
 });
 
-// 2.2 ตรวจสอบสุขภาพและแนะนำ
+
 router.get("/health-check", async (req, res) => {
   try {
+
     const pool = await poolPromise;
     const result = await pool.request().query(`
       SELECT TOP 1 * FROM air_quality_data 
