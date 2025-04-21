@@ -1,0 +1,20 @@
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+async function sendPredictionEmail(to, predictionData) {
+  return transporter.sendMail({
+    from: `"Air Quality Bot" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: "Air Quality Prediction",
+    text: `Here is your prediction:\n\n${JSON.stringify(predictionData, null, 2)}`,
+  });
+}
+
+module.exports = { sendPredictionEmail };
