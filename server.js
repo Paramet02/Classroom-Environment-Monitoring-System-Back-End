@@ -4,7 +4,7 @@ const registerRoute = require("./Register");
 const loginRoute = require("./Login");
 const profileRoute = require("./profile");
 const airQualityController = require("./AirQualityController");
-
+require('dotenv').config();
 const app = express();
 
 app.use(cors());

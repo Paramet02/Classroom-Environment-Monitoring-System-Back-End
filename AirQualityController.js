@@ -1,12 +1,16 @@
 const express = require("express");
 const router = express.Router();
 const axios = require("axios");
+const nodemailer = require('nodemailer');
 const { poolPromise } = require("./ConnectDB");
+const mssql = require('mssql');
+const cron = require('node-cron');
+const getUserFromToken = require('./authMiddleware')
+require('dotenv').config();
 
-// กำหนด BASE URL ของ ML API
 const ML_API_BASE_URL = "https://ml-knn-bjdncabjdgbwexh9.southeastasia-01.azurewebsites.net";
 
-// ฟังก์ชันช่วย Map ระดับคุณภาพอากาศ => ข้อความคำแนะนำ
+
 function getAdviceByPrediction(predictionLabel) {
   switch (predictionLabel) {
     case "Good":
@@ -26,14 +30,20 @@ function getAdviceByPrediction(predictionLabel) {
   }
 }
 
-// [POST] พยากรณ์คุณภาพอากาศ
-router.post("/predict-air-quality", async (req, res) => {
+
+router.post("/predict-air-quality", getUserFromToken, async (req, res) => {
   try {
     const pool = await poolPromise;
+    const userEmail = req.users.email;
+    
+    if (!userEmail) {
+      return res.status(400).json({ message: 'ไม่พบอีเมลใน token ผู้ใช้' });
+    }
+
     const result = await pool.request().query(`
-      SELECT TOP 1 *
-      FROM SensorData
-      ORDER BY created_at DESC
+      SELECT TOP 10 *
+      FROM DeviceSensorAQI
+      ORDER BY id DESC
     `);
 
     const rows = result.recordset;
@@ -42,41 +52,69 @@ router.post("/predict-air-quality", async (req, res) => {
       return res.status(404).json({ status: "error", message: "No sensor data found" });
     }
 
+    const latest = rows[0]; 
+
+    console.log("Processing data with ID:", latest.id);
+
     const featuresArray = [
-      rows[0].PM2_5,
-      rows[0].PM10,
-      rows[0].NO2,
-      rows[0].CO,
-      rows[0].SO2,
-      rows[0].O3
+      latest.PM2_5,
+      latest.PM10,
+      latest.NO2,
+      latest.CO,
+      latest.SO2,
+      latest.O3
     ];
 
     const mlRequestData = { features: featuresArray };
 
-    console.log("Data being sent to ML API:", JSON.stringify(mlRequestData));
+    const mlResponse = await axios.post(
+      `${ML_API_BASE_URL}/predict`,
+      mlRequestData,
+      {
+        timeout: 5000,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
 
-    let mlResponse;
-    try {
-      mlResponse = await axios.post(
-        `${ML_API_BASE_URL}/predict`,
-        mlRequestData,
-        {
-          timeout: 5000,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
-    } catch (apiErr) {
-      console.error("Error calling ML API:", apiErr.message);
-      return res.status(502).json({ status: "error", message: "ML service unavailable" });
-    }
-
-    const predictionLabel = mlResponse.data.prediction; // สมมติฝั่ง ML ส่ง field ชื่อ 'prediction'
+    const predictionLabel = mlResponse.data.prediction;
     const adviceText = getAdviceByPrediction(predictionLabel);
 
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'bellsiravit@gmail.com',
+        pass: 'heofbxlbaxchhsvv' 
+      }
+    });
+
+    const mailOptions = {
+      from: '"Air Quality Monitor" <bellsiravit@gmail.com>',
+      to: userEmail,
+      subject: 'ผลการวิเคราะห์คุณภาพอากาศล่าสุด',
+      html: `
+        <h3>ข้อมูลคุณภาพอากาศล่าสุด</h3>
+        <p><b>ผลการประเมิน:</b> ${predictionLabel}</p>
+        <p><b>คำแนะนำ:</b> ${adviceText}</p>
+        <hr />
+        <p>ข้อมูลเซนเซอร์:</p>
+        <ul>
+          <li>PM2.5: ${latest.PM2_5}</li>
+          <li>PM10: ${latest.PM10}</li>
+          <li>NO2: ${latest.NO2}</li>
+          <li>CO: ${latest.CO}</li>
+          <li>SO2: ${latest.SO2}</li>
+          <li>O3: ${latest.O3}</li>
+        </ul>
+      `};
+
+    await transporter.sendMail(mailOptions);
+
+
     res.json({
-      status: "success",
+      status: 'success',
       prediction: predictionLabel,
-      advice: adviceText
+      advice: adviceText,
+      message: `ส่งอีเมลไปยัง ${userEmail} เรียบร้อยแล้ว`
     });
 
   } catch (err) {
@@ -85,52 +123,49 @@ router.post("/predict-air-quality", async (req, res) => {
   }
 });
 
-// [GET] เช็กสุขภาพอากาศ
-router.get("/health-check", async (req, res) => {
+
+router.get("/past-24-hours-data", async (req, res) => {
   try {
     const pool = await poolPromise;
-    const result = await pool.request().query(`
-      SELECT TOP 1 * 
-      FROM air_quality_data 
-      ORDER BY timestamp DESC
-    `);
+
+    const result = await pool.request()
+      .query(`
+        SELECT TOP 300
+                id,
+                created_at,
+                Temperature,
+                Humidity,
+                PM2_5,
+                PM10,
+                NO2,
+                CO,
+                SO2,
+                O3,
+                eCO2,
+                TVOC,
+                Thai_AQI,
+                AQI_Level
+                
+            
+            FROM DeviceSensorAQI
+            ORDER BY id DESC
+      `);
 
     const rows = result.recordset;
 
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ status: "error", message: "No data for health check" });
-    }
-
-    const latestData = rows[0];
-
-    let mlResponse;
-    try {
-      mlResponse = await axios.post(
-        `${ML_API_BASE_URL}/health-check`,
-        {
-          data: {
-            pm25: latestData.pm25,
-            co2: latestData.co2,
-            humidity: latestData.humidity,
-            temperature: latestData.temperature,
-          }
-        },
-        { timeout: 5000 }
-      );
-    } catch (apiErr) {
-      console.error("Error calling ML API (health-check):", apiErr.message);
-      return res.status(502).json({ status: "error", message: "ML service unavailable" });
+      return res.status(404).json({ status: "error", message: "No sensor data found for the past 24 hours" });
     }
 
     res.json({
       status: "success",
-      advice: mlResponse.data.advice,
-      healthRisk: mlResponse.data.healthRisk,
+      data: rows,
+      data_period: "past 24 hours"
     });
 
   } catch (err) {
-    console.error("Error in /health-check:", err.message);
-    res.status(500).json({ status: "error", message: "Health check failed" });
+    console.error("Error in /air-quality/past-24-hours-data:", err.message);
+    res.status(500).json({ status: "error", message: "Failed to retrieve data for the past 24 hours" });
   }
 });
 

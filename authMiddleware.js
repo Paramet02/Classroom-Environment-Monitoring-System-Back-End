@@ -1,16 +1,19 @@
-const jwt = require("jsonwebtoken");
+const jwt = require('jsonwebtoken');
+require('dotenv').config();
 
-function getUserFromToken(req, res, next) {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ message: "Unauthorized" });
+const getUserFromToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; 
 
-  try {
-    const user = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = user;
-    next();
-  } catch (err) {
-    res.status(401).json({ message: "Invalid token" });
+  if (!token) {
+    return res.status(401).json({ message: 'Token not found' });
   }
-}
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, users) => {
+    if (err) return res.status(403).json({ message: 'Token invalid' });
+    req.users = users;
+    next();
+  });
+};
 
 module.exports = getUserFromToken;
